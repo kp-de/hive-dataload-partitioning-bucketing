@@ -1,0 +1,98 @@
+Copying data to HDFS
+$ hadoop fs -mkdir /tmp/ecom_data
+$ hadoop fs -ls /tmp/
+$ hadoop distcp s3n://samplekautuk-hive-bucket/assignment-dataset/2019-Nov.csv /tmp/ecom_data/2019-Nov.csv 
+$ hadoop distcp s3n://samplekautuk-hive-bucket/assignment-dataset/2019-Oct.csv /tmp/ecom_data/2019-Oct.csv 
+$ hadoop fs -ls /tmp/ecom_data/
+
+
+Create a new Hive Database
+> create database ecom_data;
+> use ecom_data;
+
+Creating Hive Table 
+
+create table  IF NOT EXISTS ecom_data.ecommerce_data (
+event_time timestamp,
+event_type string,
+product_id string,
+category_id string, 
+category_code string,
+brand string,
+price decimal(10,3),
+user_id bigint,
+user_session string
+)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.OpenCSVSerde'
+WITH SERDEPROPERTIES (
+   "separatorChar" = ",",
+   "quoteChar"     = "\"",
+   "escapeChar"    = "\\"
+)  
+STORED AS TEXTFILE
+LOCATION '/tmp/ecom_data/'
+TBLPROPERTIES ("skip.header.line.count"="1");
+
+
+Data Check:
+> select count(1) from ecom_data.ecommerce_data; 8738120
+> select * from ecom_data.ecommerce_data limit 20;
+
+Table Structure
+> desc formatted ecom_data.ecommerce_data;
+
+Partitioned Hive Table
+> create table IF NOT EXISTS ecom_data.ecommerce_data_part(
+event_time timestamp,
+event_type string,
+product_id string,
+category_id string, 
+category_code string,
+brand string,
+price decimal(10,3),
+user_id bigint,
+user_session string
+)
+partitioned by (event_date date);
+
+> SET hive.exec.dynamic.partition=true;
+> set hive.exec.dynamic.partition.mode=nonstrict;
+
+> Insert into  ecom_data.ecommerce_data_part partition(event_date)
+select *, to_date(event_time) from ecom_data.ecommerce_data;
+
+
+Data Location
+$ hadoop fs -ls /user/hive/warehouse/ecom_data.db/ecommerce_data_part/
+
+
+Performance Comparison
+
+> select count(1) from ecom_data.ecommerce_data where  event_time > '2019-11-01 00:00:00';    -- 30sec
+> select count(1) from ecom_data.ecommerce_data_part where event_date > '2019-11-01';   --1.2 sec
+
+
+Bucketed Table
+> create table IF NOT EXISTS ecom_data.ecommerce_data_buck(
+event_time timestamp,
+event_type string,
+product_id string,
+category_id string, 
+category_code string,
+brand string,
+price decimal(10,3),
+user_id bigint,
+user_session string,
+event_date date
+)
+clustered by (user_id) into 30 buckets;
+
+> set hive.enforce.bucketing=true;
+> SET hive.exec.dynamic.partition=true;
+> set hive.exec.dynamic.partition.mode=nonstrict;
+
+> Insert into  ecom_data.ecommerce_data_buck
+select * from ecom_data.ecommerce_data_part;
+
+Data Location
+hadoop fs -ls /user/hive/warehouse/ecom_data.db/ecommerce_data_buck/
